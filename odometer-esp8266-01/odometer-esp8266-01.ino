@@ -14,6 +14,9 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <EEPROM.h>
+#include <Ticker.h>
+
+Ticker timer;
 
 const byte LOGIN_ADDRESS = 0;
 const byte LOGIN_ADDRESS_LENGTH = 20;
@@ -23,8 +26,13 @@ const byte HALL_SENSOR = 0;
 const byte LED_PIN = 1;
 const byte SETUP_BUTTON = 3;
 const byte TRY_COUNT = 50;
+const float SECTION_LENGTH_IN_KILOMETERS = 0.00005;
+const float TIMER_INTERRUPT_IN_SECONDS = 1.0;
 
-int counter = 0;
+volatile unsigned long lastInterruptTime = 0;
+volatile int counter = 0;
+volatile float speed = 0;
+volatile float distance = 0;
 
 ESP8266WebServer server(80);
 
@@ -37,7 +45,7 @@ ESP8266WebServer server(80);
 
 
 void handleIndex() {
-  String response = String("{\"count\": ") + counter + "}";
+  String response = String("{\"distance\": ") + distance + String(", \"speed\": ") + speed + "}";
   server.send(200, "application/json", response);
 }
 
@@ -74,7 +82,9 @@ void setWifiCredentials() {
 }
 
 void reset() {
-  counter = 0;
+  distance = 0;
+
+  server.send(204, "text/plain", "");
 }
 
 
@@ -153,6 +163,23 @@ IRAM_ATTR void increaseCounter() {
   ++counter;
 }
 
+IRAM_ATTR void handleTimer() {
+  unsigned long currentTime = millis();
+  unsigned long timeDifference = currentTime - lastInterruptTime;
+
+  if (timeDifference > 0 && counter > 0) {
+    float distance_traveled = SECTION_LENGTH_IN_KILOMETERS * counter;
+    distance += distance_traveled;
+    speed = distance_traveled / (timeDifference / 3600000.0);
+    counter = 0;
+    lastInterruptTime = currentTime;
+  }
+  else
+  {
+    speed = 0;
+  }
+}
+
 
 //////////////////////////////////////////////////
 //                                              //
@@ -211,11 +238,10 @@ void connectToOtherAccessPoint() {
   }
 
   server.on("/", handleIndex);
-  server.on("reset", reset);
+  server.on("/reset", reset);
   server.onNotFound(handleNotFound);
   server.begin();
 
-  // turn off softAP.
   WiFi.softAPdisconnect(true);
 }
 
@@ -231,7 +257,6 @@ void setup( void ) {
 
     createPointAccessPoint();
   }
-  // Кнопка сброса не нажата, проверяем память на наличие логина и пароля.
   else {
     bool loginIsEmpty = isCleanEEPROM(LOGIN_ADDRESS, LOGIN_ADDRESS_LENGTH);
     bool passwordIsEmpty = isCleanEEPROM(PASSWORD_ADDRESS, PASSWORD_ADDRESS_LENGTH);
@@ -247,6 +272,7 @@ void setup( void ) {
 
   pinMode(HALL_SENSOR, INPUT);
   attachInterrupt(digitalPinToInterrupt(HALL_SENSOR), increaseCounter, RISING);
+  timer.attach(TIMER_INTERRUPT_IN_SECONDS, handleTimer);
 }
 
 void loop(void) {
