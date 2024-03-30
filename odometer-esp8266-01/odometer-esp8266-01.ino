@@ -247,11 +247,11 @@ void connectToOtherAccessPoint() {
 
 void setup( void ) {
   EEPROM.begin(512);
-  pinMode(SETUP_BUTTON, INPUT);
+  pinMode(SETUP_BUTTON, INPUT_PULLUP);
 
   int setupButton = digitalRead(SETUP_BUTTON);
 
-  if(setupButton == HIGH) {
+  if(setupButton == LOW) {
     clearEEPROM(LOGIN_ADDRESS, LOGIN_ADDRESS_LENGTH);
     clearEEPROM(PASSWORD_ADDRESS, PASSWORD_ADDRESS_LENGTH);
 
